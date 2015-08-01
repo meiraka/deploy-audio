@@ -1,0 +1,11 @@
+[all]
+runeaudio.local
+
+[runeaudio]
+runeaudio.local
+
+[beagleboneblack]
+runeaudio.local
+
+[raspberrypi]
+# runeaudio.local

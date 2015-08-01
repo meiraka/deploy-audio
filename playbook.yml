@@ -1,0 +1,61 @@
+- hosts: all
+  vars:
+    ansible_python_interpreter: "/usr/bin/python2"
+  remote_user: root
+  sudo: yes
+  tasks:
+  - name: setup app group
+    group: >-
+      gid=2000
+      name="wonderland"
+  - name: setup app user
+    user: >-
+      uid=2000
+      name="alice"
+      group="wonderland"
+      comment="Alice"
+      createhome=yes
+
+- hosts: runeaudio
+  vars:
+    ansible_python_interpreter: "/usr/bin/python2"
+  remote_user: root
+  sudo: yes
+  tasks:
+
+  - name: install gpio apps service
+    copy: >-
+      src=etc/systemd/system/
+      dest=/etc/systemd/system/
+      owner=root mode=0444
+    notify: reload systemd daemon
+    notify: restart gpio apps
+
+  - name: install gpio apps
+    copy: src=bin/ dest=/home/alice/bin/ owner=alice group=wonderland mode=0755
+    notify: restart gpio apps
+
+  - name: enable gpio apps
+    service: name='{{ item.name }}' enabled=yes
+    with_items:
+      - name: 'mpd-lcd-i2c'
+      - name: 'mpd-button'
+
+  handlers:
+  - name: reload systemd daemon
+    command: 'systemctl daemon-reload'
+
+  - name: restart gpio apps
+    service: name='{{ item.name }}' state=restarted
+    with_items:
+      - name: 'mpd-lcd-i2c'
+      - name: 'mpd-button'
+
+- hosts: beagleboneblack
+  vars:
+    ansible_python_interpreter: "/usr/bin/python2"
+  remote_user: root
+  sudo: yes
+  tasks:
+  - name: enable beagleboneblack onbard led controller
+    service: name=beagleboneblack-disable-led enabled=yes

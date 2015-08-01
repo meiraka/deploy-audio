@@ -1,0 +1,8 @@
+[Unit]
+Description=mpd i2c lcd display
+
+[Service]
+ExecStart=/home/alice/bin/mpd-lcd-i2c.py
+
+[Install]
+WantedBy=multi-user.target

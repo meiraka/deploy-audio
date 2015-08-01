@@ -1,0 +1,8 @@
+[Unit]
+Description=beagleboneblack onboard led control
+
+[Service]
+ExecStart=/home/alice/bin/beagleboneblack-disable-led
+
+[Install]
+WantedBy=multi-user.target

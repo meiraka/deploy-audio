@@ -1,0 +1,8 @@
+[Unit]
+Description=mpd gpio button
+
+[Service]
+ExecStart=/home/alice/bin/mpd-button.py
+
+[Install]
+WantedBy=multi-user.target
