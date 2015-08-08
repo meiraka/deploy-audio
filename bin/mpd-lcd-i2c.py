@@ -12,6 +12,8 @@ import re
 import Queue
 import logging
 import traceback
+import signal
+import sys
 
 import smbus
 
@@ -20,6 +22,7 @@ I2C_BUS = 1
 I2C_ADDRESS = 0x3c
 I2C_DDRAM_ADDRESS = (0x00, 0x20)
 I2C_DISPLAY_WIDTH = 16
+STARTUP_MESSAGE_SEC = 4
 
 
 class App(threading.Thread):
@@ -27,11 +30,12 @@ class App(threading.Thread):
     """Show MPD song/player information to I2C display."""
 
     DISPLAY_SUSPEND_SEC = 10
+    DISPLAY_FREEZE_SEC = 5
     POLL_SEC = 0.2
 
     def __init__(self, logger=None):
         """Initialize mpd client and i2c display."""
-        self.logger = logger if logger else logging
+        self.logger = logger if logger else logging.getLogger(__name__)
         self.logger.info("start app")
         threading.Thread.__init__(self)
         self.setDaemon(True)
@@ -63,11 +67,22 @@ class App(threading.Thread):
         self._display_suspend_time = -1  # < 0 means disable
         self._line2_hold_time = -1  # < 0 means disable
         self._queue.put(self.startup_message)
+        signal.signal(signal.SIGTERM, self.exit)
+        signal.signal(signal.SIGINT, self.exit)
+
+    def exit(self, signum, frame):
+        """display of when exit app."""
+        self.logger.info("stop app")
+        self.display.off()
+        sys.exit(0)
 
     def startup_message(self):
         """Show startup message."""
-        self.display.write('RuneAudio'.center(self.display.width), line=0)
-        time.sleep(2)
+        self.display.write('RuneAudio'.upper().center(self.display.width),
+                           line=0)
+        self.display.set_char(0, [0b11111]*8)
+        self.display.write_raw([0]*self.display.width, line=1)
+        time.sleep(STARTUP_MESSAGE_SEC)
 
     def timer_update_time(self):
         """Update bottom line playing time.
@@ -86,10 +101,11 @@ class App(threading.Thread):
             return
         now = song['time_elapsed']
         # left_data = self.make_progressbar_bordered(now, song['length'], 10)
-        left_data = list(self.make_progressbar_simple(now, song['length'], 10))
-        bottom = ' %02i:%02i' % (now / 60, now % 60)
-        right_data = map(ord, list(bottom))
-        self.display.write_raw(left_data + right_data, line=1)
+        self.display.write_raw(
+            list(self.make_progressbar_full(now, song['length'])), 1)
+        # bottom = ' %02i:%02i' % (now / 60, now % 60)
+        # right_data = map(ord, list(bottom))
+        # self.display.write_raw(left_data + right_data, line=1)
 
     def timer_display_suspend(self):
         """Suspend display if expire."""
@@ -118,8 +134,8 @@ class App(threading.Thread):
             bottom = '{artist}'.format(**self.mpd.song())
             self.display.write(
                 kakasi(bottom).center(self.display.width).upper(), line=1)
-            # freeze line2 in 4 seconds
-            self._line2_hold_time = time.time() + 4
+            # freeze line2
+            self._line2_hold_time = time.time() + self.DISPLAY_FREEZE_SEC
             # extend display suspend time
             if self._display_suspend_time > 0:
                 self._display_suspend_time = (time.time() +
@@ -166,10 +182,196 @@ class App(threading.Thread):
                 func = self._queue.get(block=True)
                 func()
             except Exception, err:
-                logger.critical(traceback.format_exc())
-                logger.critical(
+                self.logger.critical(traceback.format_exc())
+                self.logger.critical(
                     "unexpect exception in App mainloop: %s" % str(err))
                 time.sleep(1)
+
+    def make_progressbar_full(self, time_elapsed, length):
+        """Make progressbar and time elapsed num font in display cgram."""
+        font_width = 5
+        font_height = 8
+
+        def make_font_filter(readable_data):
+            """make binary font filter for display CGRAM data."""
+            or_filter = [
+                int(i.replace('*', '1').replace(' ', '0').replace('_', '0'),
+                    2)
+                for i in readable_data]
+
+            and_filter = [
+                int(i.replace('*', '1').replace(' ', '0').replace('_', '1'),
+                    2)
+                for i in readable_data]
+
+            def filter(orig_data):
+                for i in xrange(font_height):
+                    yield (orig_data[i] | or_filter[i]) & and_filter[i]
+
+            return filter
+
+        nums = {'1': make_font_filter(['   * ',
+                                       '   * ',
+                                       '   * ',
+                                       '   * ',
+                                       '   * ',
+                                       '_____',
+                                       '_____',
+                                       '_____']),
+                '2': make_font_filter([' *** ',
+                                       '   * ',
+                                       ' *** ',
+                                       ' *   ',
+                                       ' *** ',
+                                       '_____',
+                                       '_____',
+                                       '_____']),
+                '3': make_font_filter([' *** ',
+                                       '   * ',
+                                       '  ** ',
+                                       '   * ',
+                                       ' *** ',
+                                       '_____',
+                                       '_____',
+                                       '_____']),
+                '4': make_font_filter([' * * ',
+                                       ' * * ',
+                                       ' *** ',
+                                       '   * ',
+                                       '   * ',
+                                       '_____',
+                                       '_____',
+                                       '_____']),
+                '5': make_font_filter([' *** ',
+                                       ' *   ',
+                                       ' *** ',
+                                       '   * ',
+                                       ' *** ',
+                                       '_____',
+                                       '_____',
+                                       '_____']),
+                '6': make_font_filter([' *** ',
+                                       ' *   ',
+                                       ' *** ',
+                                       ' * * ',
+                                       ' *** ',
+                                       '_____',
+                                       '_____',
+                                       '_____']),
+                '7': make_font_filter([' *** ',
+                                       ' * * ',
+                                       ' * * ',
+                                       '   * ',
+                                       '   * ',
+                                       '_____',
+                                       '_____',
+                                       '_____']),
+                '8': make_font_filter(['  ** ',
+                                       ' * * ',
+                                       '  *  ',
+                                       ' * * ',
+                                       ' *** ',
+                                       '_____',
+                                       '_____',
+                                       '_____']),
+                '9': make_font_filter([' *** ',
+                                       ' * * ',
+                                       '  ** ',
+                                       '   * ',
+                                       '   * ',
+                                       '_____',
+                                       '_____',
+                                       '_____']),
+                '0': make_font_filter([' *** ',
+                                       ' * * ',
+                                       '     ',
+                                       ' * * ',
+                                       ' *** ',
+                                       '_____',
+                                       '_____',
+                                       '_____']),
+                ':': make_font_filter(['  *  ',
+                                       '     ',
+                                       '     ',
+                                       '     ',
+                                       '  *  ',
+                                       '_____',
+                                       '_____',
+                                       '_____'])}
+
+        def bar(progress):
+            """Make boxed progress bar."""
+            depth = 0b11111 << (5 - progress) & 0b11111
+            for y in xrange(8):
+                if y in [6, 7]:
+                    yield depth
+                else:
+                    yield 0b00000
+
+        screen_width = self.display.width * font_width
+        elapsed_screen_width = screen_width * time_elapsed / length
+        progress_char_pos = elapsed_screen_width / font_width
+
+        fill_char = 0
+        empty_char = 1
+        progress_char = 2
+        elapsed_minute_10_char = 3
+        elapsed_minute_1_char = 4
+        elapsed_colon_char = 5
+        elapsed_second_10_char = 6
+        elapsed_second_1_char = 7
+
+        fill = list(bar(5))
+        empty = list(bar(0))
+        progress = list(bar(elapsed_screen_width % font_width))
+
+        self.display.set_char(fill_char, fill)
+        self.display.set_char(empty_char, empty)
+        self.display.set_char(progress_char, progress)
+        elapsed_str = '%02i:%02i' % (time_elapsed / 60, time_elapsed % 60)
+        self.display.set_char(
+            elapsed_minute_10_char,
+            nums[elapsed_str[-5]](
+                fill if (progress_char_pos > self.display.width - 5) else
+                (progress if (progress_char_pos == self.display.width - 5) else
+                 empty)))
+        self.display.set_char(
+            elapsed_minute_1_char,
+            nums[elapsed_str[-4]](
+                fill if (progress_char_pos > self.display.width - 4) else
+                (progress if (progress_char_pos == self.display.width - 4) else
+                 empty)))
+        self.display.set_char(
+            elapsed_colon_char,
+            nums[elapsed_str[-3]](
+                fill if (progress_char_pos > self.display.width - 3) else
+                (progress if (progress_char_pos == self.display.width - 3) else
+                 empty)))
+        self.display.set_char(
+            elapsed_second_10_char,
+            nums[elapsed_str[-2]](
+                fill if (progress_char_pos > self.display.width - 2) else
+                (progress if (progress_char_pos == self.display.width - 2) else
+                 empty)))
+        self.display.set_char(
+            elapsed_second_1_char,
+            nums[elapsed_str[-1]](
+                fill if (progress_char_pos > self.display.width - 1) else
+                (progress if (progress_char_pos == self.display.width - 1) else
+                 empty)))
+        for i in xrange(self.display.width - 5):
+            if i < progress_char_pos:
+                yield fill_char
+            elif i == progress_char_pos:
+                yield progress_char
+            else:
+                yield empty_char
+
+        yield elapsed_minute_10_char
+        yield elapsed_minute_1_char
+        yield elapsed_colon_char
+        yield elapsed_second_10_char
+        yield elapsed_second_1_char
 
     def make_progressbar_simple(self, time_elapsed, length, width):
         """Make progressbar char in display cgram."""
@@ -316,7 +518,7 @@ class MPDStatus(threading.Thread):
 
     def __init__(self, logger=None):
         """Init status cache data."""
-        self.logger = logger if logger else logging
+        self.logger = logger if logger else logging.getLogger(__name__)
         self._updatetime = time.time()
         self.fetch_data = ['artist', 'title', 'track', 'album']
         self._song = {}
@@ -397,7 +599,7 @@ class MPDStatus(threading.Thread):
                     self.call(event)
                 if not self._mpd_isalive:
                     self._mpd_isalive = True
-                    logger.info("mpd is alive")
+                    self.logger.info("mpd is alive")
                     self.call(self.EVENT_SERVER_WAKEUP)
                 subprocess.check_output('mpc idle', shell=True)
             except subprocess.CalledProcessError:
@@ -405,15 +607,15 @@ class MPDStatus(threading.Thread):
                     out = subprocess.check_output('ps aux', shell=True)
                     if "/usr/bin/mpd" not in out:
                         self._mpd_isalive = False
-                        logger.warn("mpd is down")
+                        self.logger.warn("mpd is down")
                         self.call(self.EVENT_SERVER_DOWN)
                     else:
-                        logger.warn("mpc command failed")
+                        self.logger.warn("mpc command failed")
                         self.call(self.EVENT_SERVER_HANGUP)
                 time.sleep(1)
             except Exception, err:
-                logger.critical(traceback.format_exc())
-                logger.critical(
+                self.logger.critical(traceback.format_exc())
+                self.logger.critical(
                     "unexpect exception in mpd client thread: %s" % str(err))
                 time.sleep(1)
 
@@ -440,7 +642,7 @@ class I2CDisplay(object):
         self.left = left
         self.width = width
         self.height = len(left)
-        self.logger = logger if logger else logging
+        self.logger = logger if logger else logging.getLogger(__name__)
         self._char = {}
         self._old_line = {}
         self._line_scroll_wait = {}
@@ -554,8 +756,9 @@ def kakasi(string):
     stdout, _ = p.communicate(string)
     return stdout.strip()
 
-if __name__ == '__main__':
-    import atexit
+
+def main():
+    """Run app mainloop."""
     logging.basicConfig(
         filename='/var/log/mpd-lcd-i2c.log',
         format='[%(levelname)s] %(asctime)s [%(name)s] %(message)s',
@@ -564,14 +767,11 @@ if __name__ == '__main__':
     logger = logging.getLogger(__name__)
     try:
         app = App(logger=logger)
-
-        @atexit.register
-        def whenexit():
-            """display of when exit app."""
-            logger.info("stop app")
-            app.display.off()
-
         app.main()
     except Exception, err:
         logger.critical("app exit with: %s" % str(err))
         logger.critical(traceback.format_exc())
+        sys.exit(1)
+
+if __name__ == '__main__':
+    main()

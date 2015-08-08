@@ -99,7 +99,8 @@ def gpio_open(port, mode='r', edge='none'):
         return open('/sys/class/gpio/gpio%s/value' % port, 'r')
 
 
-if __name__ == '__main__':
+def main():
+    """Run app mainloop."""
     logging.basicConfig(
         filename='/var/log/mpd-button.log',
         format='[%(levelname)s] %(asctime)s [%(name)s] %(message)s',
@@ -112,3 +113,6 @@ if __name__ == '__main__':
     except Exception, err:
         logger.critical("app exit with: %s" % str(err))
         logger.critical(traceback.format_exc())
+
+if __name__ == '__main__':
+    main()
