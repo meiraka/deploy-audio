@@ -1,0 +1,8 @@
+[Unit]
+Description=mpd gpio led
+
+[Service]
+ExecStart=/home/alice/bin/mpd-led.py
+
+[Install]
+WantedBy=multi-user.target

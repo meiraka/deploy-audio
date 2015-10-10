@@ -1,11 +1,10 @@
 [all]
-runeaudio.local
+music.local
 
 [runeaudio]
-runeaudio.local
+music.local
 
 [beagleboneblack]
-runeaudio.local
 
 [raspberrypi]
-# runeaudio.local
+music.local

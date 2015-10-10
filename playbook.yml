@@ -1,3 +1,4 @@
+# vim:ft=ansible:
 - hosts: all
   vars:
     ansible_python_interpreter: "/usr/bin/python2"
@@ -38,8 +39,9 @@
   - name: enable gpio apps
     service: name='{{ item.name }}' enabled=yes
     with_items:
-      - name: 'mpd-lcd-i2c'
+      # - name: 'mpd-lcd-i2c'
       - name: 'mpd-button'
+      - name: 'mpd-led'
 
   handlers:
   - name: reload systemd daemon
@@ -48,8 +50,9 @@
   - name: restart gpio apps
     service: name='{{ item.name }}' state=restarted
     with_items:
-      - name: 'mpd-lcd-i2c'
+      # - name: 'mpd-lcd-i2c'
       - name: 'mpd-button'
+      - name: 'mpd-led'
 
 - hosts: beagleboneblack
   vars:
