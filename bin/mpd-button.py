@@ -9,98 +9,90 @@ import subprocess
 import time
 import logging
 import traceback
-import threading
 import signal
 import sys
 
 
-class MPD(threading.Thread):
+class MPD():
 
     """ mpd controller."""
 
-    def __init__(self):
+    def __init__(self, logger):
         """Initialize thread."""
-        threading.Thread.__init__(self)
-        self.setDaemon(True)
+        self.logger = logger if logger else logging
         self.playlist = []
-        self.start()
-
-    def run(self):
-        """Get playlist."""
-        while True:
-            try:
-                out = subprocess.check_output(
-                    ['/usr/bin/mpc', 'playlist', '-f', '%album%'])
-                self.playlist = [{'album': i} for i in out.split()]
-
-                subprocess.check_output(
-                    ['/usr/bin/mpc', 'idle', 'playlist'])
-            except subprocess.CalledProcessError:
-                time.sleep(1)
 
     def prev_album(self):
         """Play prev album song."""
-        pos = self._position()
-        current_album = self.playlist[pos]['album']
-        use_prev_album = False
-        prev_album = None
-        for prev_count, song in enumerate(reversed(self.playlist[:pos])):
+        self.logger.info("prev album")
+        playlist = self.get_playlist()
+        pos = self.get_position()
+        current_album = playlist[pos]['album']
+        self.logger.info("current album: %s" % current_album)
+        for prev_count, song in enumerate(reversed(playlist[:pos])):
             if prev_count == 0 and not current_album == song['album']:
-                use_prev_album = True
+                self.logger.info("detect current song is head in album.")
+                current_album = song['album']
+                self.logger.info("set current album: %s" % current_album)
                 continue
-            if not use_prev_album:
-                if not current_album == song['album']:
-                    subprocess.check_output(
-                        ['/usr/bin/mpc', 'play',
-                         str(pos - prev_count + 1)])
-                    return
-            else:
-                if prev_album is None:
-                    if not current_album == song['album']:
-                        prev_album = song['album']
-                        print prev_album
-                else:
-                    if not prev_album == song['album']:
-                        subprocess.check_output(
-                            ['/usr/bin/mpc', 'play',
-                             str(pos - prev_count + 1)])
-                        return
+            if not current_album == song['album']:
+                new_pos = pos - prev_count + 1
+                subprocess.check_output(
+                    ['/usr/bin/mpc', 'play', str(new_pos)])
+                self.logger.info("play %i" % new_pos)
+                return
         subprocess.check_output(
             ['/usr/bin/mpc', 'play', '1'])
 
     def prev(self):
         """Play prev song."""
+        self.logger.info("prev")
         subprocess.check_output(
             ['/usr/bin/mpc', 'prev'])
 
     def pause(self):
         """Pause song."""
+        self.logger.info("pause")
         subprocess.check_output(
             ['/usr/bin/mpc', 'pause'])
 
     def play(self):
         """Play song."""
+        self.logger.info("play")
         subprocess.check_output(
             ['/usr/bin/mpc', 'play'])
 
     def next(self):
         """Play next song."""
+        self.logger.info("next")
         subprocess.check_output(
             ['/usr/bin/mpc', 'next'])
 
     def next_album(self):
         """Play prev album song."""
-        pos = self._position()
-        current_album = self.playlist[pos]['album']
-        for next_count, song in enumerate(self.playlist[pos:]):
+        self.logger.info("next album")
+        playlist = self.get_playlist()
+        pos = self.get_position()
+        current_album = playlist[pos]['album']
+        self.logger.info("current album: %s" % current_album)
+        for next_count, song in enumerate(playlist[pos:]):
             if not current_album == song['album']:
+                self.logger.info("new album: %s" % song['album'])
+                new_pos = pos + next_count + 1
                 subprocess.check_output(
-                    ['/usr/bin/mpc', 'play', str(pos + next_count + 1)])
+                    ['/usr/bin/mpc', 'play', str(new_pos)])
+                self.logger.info("play %i" % new_pos)
                 return
         subprocess.check_output(
             ['/usr/bin/mpc', 'play', '1'])
 
-    def _position(self):
+    def get_playlist(self):
+        """Return playlist."""
+        out = subprocess.check_output(
+            ['/usr/bin/mpc', 'playlist', '-f', '%album%'])
+        return [{'album': i} for i in out.splitlines()]
+
+    def get_position(self):
         """Return playlist playing position."""
         out = subprocess.check_output(
             ['/usr/bin/mpc', '-f', '%position%'])
@@ -114,7 +106,7 @@ class App(object):
     def __init__(self, prev_album, prev, pause, play, next, next_album,
                  logger=None):
         """Open gpio for prev/play/next button."""
-        self.mpd = MPD()
+        self.mpd = MPD(logger)
         self.logger = logger if logger else logging
         self.logger.info("start app")
         self._prev_album = prev_album
