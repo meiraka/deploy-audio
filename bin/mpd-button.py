@@ -17,17 +17,15 @@ class App(object):
 
     """RotarySwitch for mpd control."""
 
-    def __init__(self, prev, play, next, logger=None):
+    def __init__(self, prev, pause, play, next, logger=None):
         """Open gpio for prev/play/next button."""
         self.logger = logger if logger else logging
         self.logger.info("start app")
-        self._values = {}
         self._prev = prev
-        self._values[self._prev] = '0'
+        self._pause = pause
         self._play = play
-        self._values[self._play] = '0'
         self._next = next
-        self._values[self._next] = '0'
+        self._last = self._pause
         signal.signal(signal.SIGTERM, self.exit)
         signal.signal(signal.SIGINT, self.exit)
 
@@ -36,20 +34,12 @@ class App(object):
         self.logger.info("stop app")
         sys.exit(0)
 
-    def _is_changed(self, fo):
-        """Check file data is changed."""
-        fo.seek(0)
-        new = fo.read().strip()
-        if self._values[fo] != new:
-            self._values[fo] = new
-            return True
-        else:
-            return False
-
     def run(self):
         """Wait gpio value is changed."""
         epoll = select.epoll()
         epoll.register(self._prev,
+                       select.EPOLLIN | select.EPOLLET)
+        epoll.register(self._pause,
                        select.EPOLLIN | select.EPOLLET)
         epoll.register(self._play,
                        select.EPOLLIN | select.EPOLLET)
@@ -60,31 +50,17 @@ class App(object):
                 try:
                     for fileno, event in epoll.poll():
                         if fileno == self._prev.fileno():
-                            if self._is_changed(self._prev):
-                                # call prev if gpio#prev == '1'
-                                cmd = ('prev'
-                                       if self._values[self._prev] == '1'
-                                       else 'pause')
-                                subprocess.check_output(
-                                    ['/usr/bin/mpc', cmd])
-                                time.sleep(0.2)
+                            subprocess.check_output(
+                                ['/usr/bin/mpc', 'prev'])
+                        if fileno == self._pause.fileno():
+                            subprocess.check_output(
+                                ['/usr/bin/mpc', 'pause'])
                         if fileno == self._play.fileno():
-                            if self._is_changed(self._play):
-                                # call play if gpio#play == '1'
-                                cmd = ('play'
-                                       if self._values[self._play] == '1'
-                                       else 'pause')
-                                subprocess.check_output(
-                                    ['/usr/bin/mpc', cmd])
+                            subprocess.check_output(
+                                ['/usr/bin/mpc', 'play'])
                         if fileno == self._next.fileno():
-                            if self._is_changed(self._next):
-                                # call next if gpio#next == '1'
-                                # do not pause because
-                                # gpio#play = '1' if gpio#next == '1'
-                                if self._values[self._next] == '1':
-                                    subprocess.check_output(
-                                        ['/usr/bin/mpc', 'next'])
-                                time.sleep(0.2)
+                            subprocess.check_output(
+                                ['/usr/bin/mpc', 'next'])
                 except subprocess.CalledProcessError:
                     time.sleep(1)
         finally:
@@ -132,12 +108,13 @@ def main():
         level=logging.DEBUG)
     logger = logging.getLogger(__name__)
     try:
-        # prev_album = gpio_open(22, edge='both')
-        prev = gpio_open(10, edge='both')
-        play = gpio_open(9, edge='both')
-        next = gpio_open(11, edge='both')
-        # next_album = gpio_open(23, edge='both')
-        sw = App(prev, play, next, logger)
+        # prev_album = gpio_open(22, edge='rising')
+        prev = gpio_open(10, edge='rising')
+        pause = gpio_open(9, edge='rising')
+        play = gpio_open(11, edge='rising')
+        next = gpio_open(23, edge='rising')
+        # next_album = gpio_open(24, edge='rising')
+        sw = App(prev, pause, play, next, logger)
         sw.run()
         # sw.run_poll()
     except Exception, err:
