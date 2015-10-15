@@ -27,12 +27,6 @@ class LED(object):
         with open('/sys/class/gpio/gpio%s/direction' % port, 'w') as f:
             f.write('out')
 
-    def __del__(self):
-        """finalize led gpio port."""
-        if os.path.exists('/sys/class/gpio/gpio%s' % self._port):
-            with open('/sys/class/gpio/unexport', 'w') as f:
-                f.write(self._port)
-
     def on(self):
         """LED on."""
         with open('/sys/class/gpio/gpio%s/value' % self._port, 'w') as f:
@@ -42,6 +36,14 @@ class LED(object):
         """LED off."""
         with open('/sys/class/gpio/gpio%s/value' % self._port, 'w') as f:
             f.write('0')
+
+
+def close_gpio(port):
+    """finalize gpio port."""
+    port = str(port)
+    if os.path.exist('/sys/class/gpio/gpio%s' % port):
+        with open('/sys/class/gpio/unexport', 'w') as f:
+            f.write(port)
 
 
 class App(object):
@@ -56,9 +58,9 @@ class App(object):
         signal.signal(signal.SIGINT, self.exit)
 
     def exit(self, signum, frame):
-        """led off when exit app."""
-        self.led.off()
+        """led on when exit app."""
         self.logger.info("stop app")
+        self.led.on()
         sys.exit(0)
 
     def run(self):
@@ -74,7 +76,7 @@ class App(object):
                     self.led.off()
                     time.sleep(0.3)
                     self.led.on()
-            except:
+            except subprocess.CalledProcessError:
                 # blink slowly when mpd error/down
                 self.led.off()
                 time.sleep(1)
